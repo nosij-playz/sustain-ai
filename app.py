@@ -28,12 +28,24 @@ ui_state = {
 def cleanup_all_agents():
     """Performs cleanup for all active master agent sessions on exit."""
     print("\n🧹 Cleaning up all agent sessions on shutdown...")
+    # 1. Close active agent sessions
     for location, master in master_instances.items():
         try:
             print(f"--> Cleaning up: {location}")
             master.cleanup()
         except Exception as e:
             print(f"Error cleaning up {location}: {e}")
+    
+    # 2. Clear all uploads/plots/audio
+    try:
+        if os.path.exists(UPLOAD_DIR):
+            import shutil
+            shutil.rmtree(UPLOAD_DIR)
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
+            print("--> Cleared upload directory.")
+    except Exception as e:
+        print(f"Error clearing upload directory: {e}")
+
     print("Shutdown complete.")
 
 # Register the cleanup function to run when the script exits

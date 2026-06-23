@@ -19,7 +19,7 @@ from backend.Agents.summarizer import TechnicalTextSummarizer
 from backend.image.explain import Vision 
 from backend.Agents.Plotter import AIPlotterApp
 from backend.Agents.research import ResearchAnalyzer
-from backend.display.Dashboard import DashboardModule
+from backend.output.Dashboard import DashboardModule
 
 def _load_env_basic(dotenv_path: str = ".env"):
     try:
@@ -1630,7 +1630,7 @@ class ClassifierAgentWrapper:
         return self.c.run(p or {})
 
 class DashboardAgentWrapper:
-    def __init__(self): from backend.display.Dashboard import DashboardModule; self.d = DashboardModule()
+    def __init__(self): from backend.output.Dashboard import DashboardModule; self.d = DashboardModule()
     def run(self, p):
         kb = p.get("knowledge_base", {}) or {}
         env_res = kb.get("env_agent") if isinstance(kb.get("env_agent"), dict) else {}

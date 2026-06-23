@@ -407,6 +407,10 @@
                     <button type="button" id="speech-stop-btn" class="btn-secondary" onclick="stopRecording()" style="display:none;">
                         Stop & Send
                     </button>
+                    <button type="button" id="speech-audio-ctrl" class="btn-secondary" onclick="toggleAudioPlayback()" style="display:none;">
+                        <svg class="icon-sm" id="audio-ctrl-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="15" height="15" rx="2" ry="2"></rect><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                        <span id="audio-ctrl-text">Pause Audio</span>
+                    </button>
                 </div>
 
                 <div class="status-card">
@@ -477,6 +481,7 @@
                         {% if active_mode == 'speech' %}
                         <p class="empty-title">Ready for voice input</p>
                         <p class="empty-sub">Click Start listening and speak into your microphone.</p>
+                        <p class="empty-sub">Setup your location to get personalized responses.</p>
                         {% else %}
                         <p class="empty-title">Start a conversation</p>
                         <p class="empty-sub">Ask about waste disposal, pollution, soil health, or sustainability.</p>
@@ -701,18 +706,113 @@
     // --- Voice Recording Logic ---
     let mediaRecorder;
     let audioChunks = [];
+    let stream;
+    let currentAudio = null;
 
-    async function startRecording() {
-        const statusVal = document.getElementById('speech-status-val');
+    function toggleAudioPlayback() {
+        if (!currentAudio) return;
+        
+        const ctrlBtn = document.getElementById('speech-audio-ctrl');
+        const ctrlText = document.getElementById('audio-ctrl-text');
+        const ctrlIcon = document.getElementById('audio-ctrl-icon');
+
+        if (currentAudio.paused) {
+            currentAudio.play();
+            ctrlText.innerText = "Pause Audio";
+            ctrlIcon.innerHTML = `<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>`;
+        } else {
+            currentAudio.pause();
+            ctrlText.innerText = "Play Audio";
+            ctrlIcon.innerHTML = `<polygon points="5 3 19 12 5 21 5 3"></polygon>`;
+        }
+    }
+
+    function setUIState(state) {
         const startBtn = document.getElementById('speech-start-btn');
         const stopBtn = document.getElementById('speech-stop-btn');
+        const statusVal = document.getElementById('speech-status-val');
         const recText = document.getElementById('rec-text');
 
+        if (state === 'listening') {
+            if (startBtn) startBtn.style.display = 'none';
+            if (stopBtn) stopBtn.style.display = 'block';
+            if (statusVal) statusVal.innerText = "Listening...";
+            if (recText) recText.innerText = "Stop Recording";
+        } else if (state === 'processing') {
+            if (startBtn) startBtn.style.display = 'none';
+            if (stopBtn) stopBtn.style.display = 'none';
+            if (statusVal) statusVal.innerText = "Processing...";
+        } else { // Idle
+            if (startBtn) startBtn.style.display = 'block';
+            if (stopBtn) stopBtn.style.display = 'none';
+            if (statusVal) statusVal.innerText = "Idle";
+            if (recText) recText.innerText = "Start Listening";
+        }
+    }
+
+    function setThinkingState(show) {
+        const chatScroll = document.getElementById('chat-scroll');
+        if (show) {
+            const thinkingId = 'thinking-voice-span-' + Date.now();
+            const svgIcon = `<svg class="icon-sm" style="animation: spin 1s linear infinite;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>`;
+            
+            const thinkingDiv = document.createElement('div');
+            thinkingDiv.id = 'thinking-indicator';
+            thinkingDiv.className = 'msg msg-assistant';
+            thinkingDiv.innerHTML = `
+                <div class="msg-meta">
+                    <span class="msg-role">${systemName}</span>
+                    <span class="msg-time">Working...</span>
+                </div>
+                <p class="msg-text" style="display:flex; align-items:center; gap:8px; color: var(--accent-text);">
+                    ${svgIcon}
+                    <span id="${thinkingId}">Processing your voice request...</span>
+                </p>
+            `;
+            chatScroll.appendChild(thinkingDiv);
+            chatScroll.scrollTop = chatScroll.scrollHeight;
+
+            // Setup the cycling text interval
+            const textSpan = document.getElementById(thinkingId);
+            if (textSpan) {
+                const states = [
+                    "Processing your voice request...", 
+                    "SustainAi is Thinking...", 
+                    "Analyzing your voice input..."
+                ];
+                let stateIndex = 0;
+                setInterval(() => {
+                    if (!document.getElementById(thinkingId)) return; // Stop if element removed
+                    stateIndex = (stateIndex + 1) % states.length;
+                    textSpan.textContent = states[stateIndex];
+                }, 2500);
+            }
+        } else {
+            const el = document.getElementById('thinking-indicator');
+            if (el) el.remove();
+        }
+    }
+
+    async function startRecording() {
         try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            // --- VAD Setup ---
+            const audioContext = new AudioContext();
+            const source = audioContext.createMediaStreamSource(stream);
+            const analyser = audioContext.createAnalyser();
+            source.connect(analyser);
+            analyser.fftSize = 256;
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            let silenceStart = null;
+            const SILENCE_THRESHOLD = 30; 
+            const SILENCE_DELAY = 1500;
+
             const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
                              ? 'audio/webm' 
                              : 'audio/ogg';
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
             mediaRecorder = new MediaRecorder(stream, { mimeType });
             audioChunks = [];
 
@@ -720,14 +820,37 @@
                 if (event.data.size > 0) audioChunks.push(event.data);
             };
 
-            mediaRecorder.onstop = uploadAudio;
+            mediaRecorder.onstop = async () => {
+                stream.getTracks().forEach(track => track.stop());
+                audioContext.close();
+                await uploadAudio();
+            };
 
             mediaRecorder.start();
-            
-            if (statusVal) statusVal.innerText = "Recording...";
-            if (recText) recText.innerText = "Stop Recording";
-            if (startBtn) startBtn.style.display = 'none';
-            if (stopBtn) stopBtn.style.display = 'block';
+            setUIState('listening');
+
+            // --- VAD Loop ---
+            function checkVolume() {
+                if (!mediaRecorder || mediaRecorder.state === "inactive") return;
+                
+                analyser.getByteFrequencyData(dataArray);
+                let volume = 0;
+                for (let i = 0; i < dataArray.length; i++) volume += dataArray[i];
+                volume /= dataArray.length;
+
+                if (volume < SILENCE_THRESHOLD) {
+                    if (!silenceStart) silenceStart = Date.now();
+                    if (Date.now() - silenceStart > SILENCE_DELAY) {
+                        mediaRecorder.stop();
+                        return;
+                    }
+                } else {
+                    silenceStart = null;
+                }
+                requestAnimationFrame(checkVolume);
+            }
+            checkVolume();
+
         } catch (err) {
             console.error("Mic access error:", err);
             alert("Could not access microphone. Please check permissions.");
@@ -737,16 +860,14 @@
     function stopRecording() {
         if (mediaRecorder && mediaRecorder.state !== 'inactive') {
             mediaRecorder.stop();
-            const statusVal = document.getElementById('speech-status-val');
-            if (statusVal) statusVal.innerText = "Processing...";
+            setUIState('processing');
         }
     }
 
     async function uploadAudio() {
-        const statusVal = document.getElementById('speech-status-val');
-        const startBtn = document.getElementById('speech-start-btn');
-        const stopBtn = document.getElementById('speech-stop-btn');
-        const recText = document.getElementById('rec-text');
+        // 1. Update UI immediately
+        setUIState('processing');
+        setThinkingState(true);
 
         const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
         const formData = new FormData();
@@ -759,14 +880,17 @@
             });
             const data = await response.json();
 
+            // 2. Remove the "Thinking..." state
+            setThinkingState(false);
+
             if (data.success) {
-                // 1. Append User Transcript to Chat
+                // 3. Append User Transcript to Chat
                 const userMsg = document.createElement('div');
                 userMsg.className = 'msg msg-user';
                 userMsg.innerHTML = `<div class="msg-meta"><span class="msg-role">You</span><span class="msg-time">Just now · speech</span></div><p class="msg-text">🎤 ${escapeHTML(data.transcript)}</p>`;
                 chatScroll.appendChild(userMsg);
 
-                // 2. Append AI Response to Chat
+                // 4. Append AI Response to Chat
                 const aiMsg = document.createElement('div');
                 aiMsg.className = 'msg msg-assistant';
                 aiMsg.innerHTML = `<div class="msg-meta"><span class="msg-role">${systemName}</span><span class="msg-time">Just now · speech</span></div><p class="msg-text">${escapeHTML(data.response_text)}</p>`;
@@ -774,22 +898,25 @@
                 
                 chatScroll.scrollTop = chatScroll.scrollHeight;
 
-                // 3. Play the generated TTS audio
-                const audioPlayer = new Audio(data.audio_url);
-                audioPlayer.play();
+                // 5. Play the generated TTS audio
+                currentAudio = new Audio(data.audio_url);
+                
+                const audioCtrl = document.getElementById('speech-audio-ctrl');
+                if (audioCtrl) audioCtrl.style.display = 'block';
 
-                if (statusVal) statusVal.innerText = "Complete";
+                currentAudio.play();
+
+                currentAudio.onended = () => {
+                    if (audioCtrl) audioCtrl.style.display = 'none';
+                };
             } else {
-                alert("Error: " + data.error);
-                if (statusVal) statusVal.innerText = "Error";
+                alert("Error: la" + data.error);
             }
         } catch (err) {
             console.error("Upload error:", err);
-            if (statusVal) statusVal.innerText = "Upload failed";
+            setThinkingState(false);
         } finally {
-            if (startBtn) startBtn.style.display = 'block';
-            if (stopBtn) stopBtn.style.display = 'none';
-            if (recText) recText.innerText = "Start Listening";
+            setUIState('idle');
         }
     }
 </script>
