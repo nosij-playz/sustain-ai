@@ -349,7 +349,7 @@ class DashboardModule:
 
         main_sections = []
         if has_items(hero):
-            main_sections.append(section_card("Executive Overview", render_hero(hero)))
+            pass
 
         if has_items(visuals):
             main_sections.append(section_card("Visual Intelligence", render_visuals(visuals)))

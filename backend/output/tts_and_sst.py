@@ -5,6 +5,7 @@ import os
 import re
 import unicodedata
 import warnings
+from aiohttp import ClientConnectorError
 
 warnings.filterwarnings(
     "ignore",
@@ -118,10 +119,14 @@ async def generate_tts_file(text, output_path):
     clean_text = _normalize_for_speech(text)
     if not clean_text:
         return None
-    
-    communicate = edge_tts.Communicate(clean_text, VOICE, rate=_normalize_rate(RATE), pitch=PITCH)
-    await communicate.save(output_path)
-    return output_path
+
+    try:
+        communicate = edge_tts.Communicate(clean_text, VOICE, rate=_normalize_rate(RATE), pitch=PITCH)
+        await communicate.save(output_path)
+        return output_path
+    except (ClientConnectorError, TimeoutError, OSError, RuntimeError) as exc:
+        print(f"TTS generation failed: {exc}")
+        return None
 
 def speak(text):
     """Main function to convert text to speech and play it"""

@@ -52,35 +52,40 @@ def cleanup_all_agents():
 atexit.register(cleanup_all_agents)
 # ------------------------------
 
-def get_master_agent(location: str = "Chittarikkal, Kerala, India") -> WasteDispoMaster:
-    if location not in master_instances:
-        print(f"🌟 Booting new Master Agent for {location}...")
-        master_instances[location] = WasteDispoMaster(default_location=location)
-    return master_instances[location]
+def get_master_agent(location=None) -> WasteDispoMaster:
+    effective_location = location or "Unknown"
+    if effective_location not in master_instances:
+        print(f"🌟 Booting new Master Agent for {effective_location}...")
+        master_instances[effective_location] = WasteDispoMaster(default_location=effective_location)
+    return master_instances[effective_location]
 
 @app.before_request
 def initialize_session():
     if "mode" not in session:
         session["mode"] = "chat"
     if "location" not in session:
-        session["location"] = "Chittarikkal, Kerala, India"
+        session["location"] = None
 
 @app.route("/")
 def index():
     system_name = os.getenv("SUSTAINAI_SYSTEM_NAME", "SustainAi")
     active_mode = session.get("mode", "chat")
     active_mode_label = "Chat Mode" if active_mode == "chat" else "Voice Mode"
+    current_location = session.get("location") or ""
     
     dashboard_ready = os.path.exists(DASHBOARD_PATH)
+    show_dashboard_toast = session.pop("dashboard_notification", False)
 
     return render_template(
         "index.html",
         system_name=system_name,
         active_mode=active_mode,
         active_mode_label=active_mode_label,
+        current_location=current_location,
         speech_state=ui_state["speech_state"],
         chat_history=ui_state["chat_history"],
-        dashboard_ready=dashboard_ready
+        dashboard_ready=dashboard_ready,
+        show_dashboard_toast=show_dashboard_toast
     )
 
 @app.route("/dashboard")
@@ -100,6 +105,12 @@ def serve_display_file(filename):
 def set_mode():
     mode = request.form.get("mode", "chat")
     session["mode"] = mode
+    return redirect(url_for("index"))
+
+@app.route("/set-location", methods=["POST"])
+def set_location():
+    location = request.form.get("location", "").strip()
+    session["location"] = location or None
     return redirect(url_for("index"))
 
 @app.route("/chat", methods=["POST"])
@@ -140,6 +151,9 @@ def chat():
         "mode": "chat",
         "content": ai_response
     })
+
+    if os.path.exists(DASHBOARD_PATH):
+        session["dashboard_notification"] = True
 
     return redirect(url_for("index"))
 
@@ -200,7 +214,7 @@ def stop_speech():
 
 @app.route("/clear-chat", methods=["POST"])
 def clear_chat():
-    master = get_master_agent(session.get("location", "Chittarikkal, Kerala, India"))
+    master = get_master_agent(session.get("location"))
     master.cleanup() 
     
     try:
@@ -242,21 +256,41 @@ def process_voice_input():
         return jsonify({"success": False, "error": "Could not transcribe audio"}), 400
     
     # 4. Get AI Response
-    master = get_master_agent(session.get("location", "Chittarikkal, Kerala, India"))
+    master = get_master_agent(session.get("location"))
     ai_response = master.process_input(user_text)
+    dashboard_ready = os.path.exists(DASHBOARD_PATH)
+    if dashboard_ready:
+        session["dashboard_notification"] = True
+
+    timestamp = datetime.now().strftime("%I:%M %p")
+    ui_state["chat_history"].append({
+        "role": "user",
+        "timestamp": timestamp,
+        "mode": "speech",
+        "content": f"🎤 {user_text}"
+    })
+    ui_state["chat_history"].append({
+        "role": "assistant",
+        "timestamp": datetime.now().strftime("%I:%M %p"),
+        "mode": "speech",
+        "content": ai_response
+    })
     
     # 5. Generate TTS
     tts_filename = f"resp_{uuid.uuid4().hex}.mp3"
     tts_path = os.path.join(UPLOAD_DIR, tts_filename)
     
     import asyncio
-    asyncio.run(generate_tts_file(ai_response, tts_path))
+    tts_output = asyncio.run(generate_tts_file(ai_response, tts_path))
+    audio_url = f"/display/{tts_filename}" if tts_output else None
     
     return jsonify({
         "success": True,
         "transcript": user_text,
         "response_text": ai_response,
-        "audio_url": f"/display/{tts_filename}"
+        "audio_url": audio_url,
+        "dashboard_ready": dashboard_ready,
+        "dashboard_url": "/dashboard" if dashboard_ready else None
     })
     
     # 1. Transcribe
@@ -267,7 +301,7 @@ def process_voice_input():
         return jsonify({"success": False, "error": "Could not transcribe"}), 400
     
     # 2. Get AI Response
-    master = get_master_agent(session.get("location", "Chittarikkal, Kerala, India"))
+    master = get_master_agent(session.get("location"))
     ai_response = master.process_input(user_text)
     
     # 3. Generate TTS Audio file for the client to play

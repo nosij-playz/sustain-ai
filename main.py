@@ -7,7 +7,7 @@ import time
 class WasteDispoApp:
     """Unified application for waste disposal management with chat and speech interfaces."""
 
-    def __init__(self, default_location="Chittarikkal, Kerala, India"):
+    def __init__(self, default_location=None):
         """Initialize the application with master agent and configuration."""
         self.default_location = default_location
         self.system_name = os.getenv("SUSTAINAI_SYSTEM_NAME", "SustainAi")
@@ -145,7 +145,7 @@ class WasteDispoApp:
 
 def main():
     """Main entry point for the application."""
-    default_location = "Chittarikkal, Kerala, India"
+    default_location = None
     
     app = WasteDispoApp(default_location=default_location)
     

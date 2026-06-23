@@ -174,7 +174,7 @@ class ChatMemoryStore:
 class WasteDispoMaster:
     ENV_CACHE_TTL_SECONDS = 60 * 60  # 1 hour
 
-    def __init__(self, model_name="gemma4:31b-cloud", lite_model=None, default_location="Chittarikkal, Kerala, India"):
+    def __init__(self, model_name="gemma4:31b-cloud", lite_model=None, default_location=None):
         # Hard-lock to a single model across the entire system.
         locked_model = "gemma4:31b-cloud"
         self.model_name = locked_model
@@ -433,7 +433,7 @@ class WasteDispoMaster:
     def _extract_image_path(self, text: str) -> Optional[str]:
         if not text:
             return None
-        m = re.search(r"([\w\-./\\ ]+\.(?:png|jpg|jpeg|webp))", text, flags=re.IGNORECASE)
+        m = re.search(r"([\w\-./\\: ]+\.(?:png|jpg|jpeg|webp))", text, flags=re.IGNORECASE)
         if not m:
             return None
         candidate = m.group(1).strip().strip('"').strip("'")
