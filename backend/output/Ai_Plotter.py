@@ -381,11 +381,15 @@ class AIPlotter:
             print(code)
             return False, None
 
-    def _execute_code_subprocess(self, code, output_path, context_text="", chart_type=""):
+    def _execute_code_subprocess(self, code, output_path, context_text="", chart_type="", attempt=1, max_attempts=3):
         if not code or not output_path:
             return False, None
 
-        print("\n🚀 Executing generated code...")
+        if attempt == 1:
+            print("\n🚀 Executing generated code...")
+        else:
+            print(f"\n🔧 Attempt {attempt}/{max_attempts}: Re-executing patched code...")
+
         try:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             patched_code = self._patch_plot_code(code)
@@ -402,19 +406,24 @@ class AIPlotter:
                 check=False,
             )
 
+            # --- THE SELF-HEALING LOOP ---
             if proc.returncode != 0:
                 err = proc.stderr.strip() or "Unknown error"
-                print(f"❌ Execution Error: {err}")
-                print("\n--- Generated Code That Failed ---\n")
-                print(code)
-                if self._looks_like_blocked_dependency_error(err):
-                    print("↩️ Falling back to a pure-matplotlib plot because the generated code hit a blocked dependency.")
-                    return self._generate_safe_fallback_plot(
-                        output_path,
-                        context_text=context_text,
-                        chart_type=chart_type,
-                    )
-                return False, None
+                print(f"❌ Execution Error: {err.splitlines()[-1]}") # Print just the last line (the actual error)
+                
+                if attempt < max_attempts:
+                    print("🧠 Asking Agent to fix the error...")
+                    fixed_code = self._ask_llm_to_fix_code(code, err, context_text)
+                    if fixed_code:
+                        return self._execute_code_subprocess(fixed_code, output_path, context_text, chart_type, attempt + 1, max_attempts)
+                
+                # If we exhausted attempts or fixing failed, use the ultimate fallback
+                print("↩️ Falling back to a pure-matplotlib static plot.")
+                return self._generate_safe_fallback_plot(
+                    output_path,
+                    context_text=context_text,
+                    chart_type=chart_type,
+                )
 
             if os.path.exists(output_path):
                 print(f"✅ Plot successfully generated and saved: {output_path}")
@@ -422,10 +431,36 @@ class AIPlotter:
 
             print("❌ Plot code ran, but no image was saved to OUTPUT_PATH.")
             return False, None
+            
         finally:
             try:
                 if 'tmp_path' in locals() and os.path.exists(tmp_path):
                     os.remove(tmp_path)
             except Exception:
                 pass
+
+    def _ask_llm_to_fix_code(self, broken_code, error_trace, context_text):
+        prompt = (
+            f"You are an expert Python data scientist. The following matplotlib code you generated resulted in an error.\n\n"
+            f"USER ORIGINAL INTENT:\n{context_text}\n\n"
+            f"BROKEN CODE:\n```python\n{broken_code}\n```\n\n"
+            f"ERROR TRACE:\n{error_trace}\n\n"
+            f"YOUR TASK:\n"
+            f"1. Analyze the error trace (pay attention to array dimension mismatches or deprecated API calls).\n"
+            f"2. Fix the Python code so it executes successfully.\n"
+            f"3. Return ONLY the raw, fixed Python code. Do not use markdown backticks, do not include explanations.\n"
+            f"4. Ensure plt.savefig(OUTPUT_PATH, dpi=200, bbox_inches='tight') remains intact."
+        )
+
+        try:
+            response = ollama.chat(
+                model=self.model_name,
+                messages=[{'role': 'user', 'content': prompt}],
+                stream=False
+            )
+            code = response['message']['content']
+            return self._clean_code(code)
+        except Exception as e:
+            print(f"Error during self-healing: {e}")
+            return None
 

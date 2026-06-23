@@ -1010,9 +1010,30 @@ class WasteDispoMaster:
 
     def _run_actions(self, actions: List[Dict], user_text: str, force_full_actions: bool = False) -> str:
         # If user is requesting a full dashboard/report, clear previous generated outputs
-        # so the new run doesn't mix old plots/cards.
         if self._is_full_report_request(user_text) or any(a.get("intent") == "dashboard_agent" for a in (actions or [])):
             self._cleanup_previous_outputs()
+
+        # --- NEW: Hard Guardrail to intercept over-eager LLM routing ---
+        valid_actions = []
+        for a in (actions or []):
+            intent = a.get("intent")
+            
+            # If it's a vision tool, enforce strict image presence
+            if intent in ["vision_agent", "classifier_agent"]:
+                provided_path = a.get("parameters", {}).get("image_path", "")
+                has_image = bool(self._extract_image_path(user_text) or self._extract_image_path(provided_path))
+                
+                if not has_image:
+                    print(f"🔀 Guardrail: Intercepted and blocked '{intent}'. No image file was detected.")
+                    continue # Drop the action
+                    
+            valid_actions.append(a)
+            
+        actions = valid_actions
+        
+        # If the guardrail stripped all actions (e.g., it only wanted to classify an absent image), fallback.
+        if not actions:
+            return "Action blocked. To classify or analyze an object, please provide a valid image file."
 
         # Reduce agent workload unless a full report is explicitly requested.
         if isinstance(actions, list) and not (self._is_full_report_request(user_text) or force_full_actions):
@@ -1172,9 +1193,6 @@ class WasteDispoMaster:
         self.context["last_suggested_actions"] = []
         self.session.save(self.context)
         response = self._synthesize_final_response(execution_log, user_text)
-        plot_analysis = self._format_plot_explanations(plot_explanations)
-        if plot_analysis:
-            response = f"{response}\n\n{plot_analysis}"
 
         if self.context.get("knowledge_base", {}).get("summary_tables") and self.agents["dashboard_agent"]["module"]:
             self.context["knowledge_base"]["master_insights"] = self._build_master_insights(self.context["knowledge_base"])
@@ -1364,51 +1382,66 @@ class WasteDispoMaster:
         total_agents = len(logs) if logs else 1
         data_completeness = successful_agents / total_agents if total_agents > 0 else 0
         
-        summary_source = [
-            f"User request: {original_query}",
-            "Execution log:",
-            data_summary,
-        ]
-        summary_input = "\n\n".join(summary_source)
+        # --- 1. CONDITIONAL SUMMARIZATION (The Threshold) ---
+        # Only use the technical summarizer if the data payload is massive (>3000 chars).
+        # Otherwise, the Master can easily handle the raw JSON directly.
+        is_extreme_data = len(data_summary) > 3000 
+        
+        backend_context = ""
+        
+        if is_extreme_data:
+            print("📊 Massive data detected. Invoking Technical Summarizer to condense logs...")
+            summary_input = f"User request: {original_query}\n\nExecution log:\n{data_summary}"
+            try:
+                summarizer = self.agents.get("summarizer_agent", {}).get("module")
+                if summarizer:
+                    summary_result = summarizer.run({"text": summary_input})
+                    if isinstance(summary_result, dict):
+                        backend_context = summary_result.get("summary") or summary_result.get("text") or summary_result.get("output")
+                    elif isinstance(summary_result, str):
+                        backend_context = summary_result
+            except Exception as error:
+                print(f"Summarizer agent failed: {error}")
+                backend_context = data_summary # Fallback
+        else:
+            print("💬 Standard payload. Bypassing summarizer for direct Master interaction.")
+            backend_context = data_summary
 
-        response_text = None
+        # --- 2. HUMANIZATION (The Mouthpiece) ---
+        chat_prompt = (
+            f"You are {self.master_name}, a highly intelligent, empathetic, and premium environmental assistant for {self.system_name}.\n"
+            f"The user asked: '{original_query}'\n\n"
+            f"Here is the backend data gathered by our system:\n{backend_context}\n\n"
+            f"INSTRUCTIONS FOR YOUR RESPONSE:\n"
+            f"1. Be natural, conversational, and pleasing to read. Speak directly to the user as a helpful humanized expert.\n"
+            f"2. NEVER mention 'agents', 'JSON', 'execution logs', 'queries', or how the backend works. Be completely seamless.\n"
+            f"3. Synthesize the findings into clear insights. If the data lacks specific answers, politely guide the user on what to do next or ask a clarifying question.\n"
+            f"4. Keep formatting clean and elegant (short paragraphs, use bullet points only if listing clear actions)."
+        )
+        
         try:
-            summarizer = self.agents.get("summarizer_agent", {}).get("module")
-            if summarizer:
-                summary_result = summarizer.run({"text": summary_input})
-                if isinstance(summary_result, dict):
-                    response_text = summary_result.get("summary") or summary_result.get("text") or summary_result.get("output")
-                elif isinstance(summary_result, str):
-                    response_text = summary_result
-        except Exception as error:
-            print(f"Summarizer agent failed: {error}")
-
-        if not response_text:
-            prompt = (
-                f"The user asked: '{original_query}'\nResults: {data_summary}\n\n"
-                f"Provide a concise, chat-friendly response (200-400 words max). "
-                f"Focus on: 1) Key findings, 2) Risk assessment, 3) Top 3 actions. "
-                f"Be direct and actionable. Avoid verbose explanations."
-            )
             response = ollama.chat(
                 model=self.model_name,
-                messages=[{'role': 'user', 'content': prompt}],
+                messages=[{'role': 'user', 'content': chat_prompt}],
                 stream=False
             )
             response_text = response['message']['content']
+        except Exception as e:
+            print(f"Chat generation failed: {e}")
+            response_text = "I've checked our databases for you. We don't have highly specific data on that exact item right now, but how else can I assist you with your sustainability goals?"
 
+        # Parse out any tables for the dashboard, keep the text for chat
         response_text, tables = self._parse_summary_output(response_text)
         self._stage_summary_tables(tables)
 
-        # Keep the chat answer compact and paragraph-based.
+        # Keep the chat answer compact
         response_text = self._limit_chat_paragraphs(response_text, max_paragraphs=3)
         
-        # Grade the response quality
+        # Optional: You may want to comment out this grading append for production 
+        # so it doesn't ruin the "human" vibe with a sudden "[Data: 80% | Grade: C]" tag.
         quality = self._grade_response_quality(response_text, data_completeness)
-        
-        # Only show quality metric if grade is low
         if quality["grade"] in ["C", "D"]:
-            response_text += f"\n[Data: {quality['completeness']*100:.0f}% | Grade: {quality['grade']}]"
+            pass # Or handle quietly in backend logs instead of showing the user
         
         return response_text
 

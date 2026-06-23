@@ -20,6 +20,10 @@ class DashboardModule:
         if not path:
             return ""
         
+        # If it's already a full URL, return it as is.
+        if path.startswith("http://") or path.startswith("https://") or path.startswith("data:image"):
+            return path
+            
         # 1. Normalize all variations of separation slashes to forward slashes
         clean_path = path.replace("\\", "/")
         
@@ -225,6 +229,13 @@ class DashboardModule:
                 
                 # Dynamic normalization to enforce standard relative rendering path mapping
                 normalized_img = self._normalize_image_path(image)
+
+                # Check if it's a local file and if it exists
+                if not normalized_img.startswith("http") and not normalized_img.startswith("data:image"):
+                    # Reconstruct absolute path to check existence
+                    check_path = os.path.abspath(os.path.join(os.path.dirname(self.output_file), normalized_img))
+                    if not os.path.exists(check_path):
+                        continue # Skip this card if the image is missing
 
                 cards.append(
                     "<div class='glass-premium p-4 rounded-3xl border border-slate-800 shadow-xl space-y-3'>"

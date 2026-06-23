@@ -6,17 +6,17 @@ from ollama import chat
 class TechnicalTextSummarizer:
     def __init__(
         self,
-        model="gpt-oss:120b-cloud",
+        model="gpt-oss:20b-cloud",
         chunk_size=10000,
         max_workers=1,
-        final_summary_words=1500,
+        max_summary_words=1500,  # Renamed to reflect a hard ceiling rather than a target
         retry_attempts=3,
         retry_delay=5
     ):
         self.model = model
         self.chunk_size = chunk_size
         self.max_workers = max_workers
-        self.final_summary_words = final_summary_words
+        self.max_summary_words = max_summary_words
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
 
@@ -69,7 +69,8 @@ class TechnicalTextSummarizer:
 
         return chunks
 
-    def call_model(self, prompt):
+    # Updated to accept a dynamic system_prompt
+    def call_model(self, prompt, system_prompt):
         for attempt in range(self.retry_attempts):
             try:
                 response = chat(
@@ -77,15 +78,7 @@ class TechnicalTextSummarizer:
                     messages=[
                         {
                             "role": "system",
-                            "content": (
-                                "You are an elite technical synthesis engine. "
-                                "Study technical input deeply. "
-                                "Preserve analytical relationships, engineering logic, observations, "
-                                "metrics, causal dependencies, conceptual findings, technical explanations, "
-                                "architecture details, and research insights. "
-                                "Remove redundancy while maximizing technical information density."
-                                "Generate a structured technical summary that captures the essence of the input with precision and depth in Natural English."
-                            )
+                            "content": system_prompt
                         },
                         {
                             "role": "user",
@@ -104,16 +97,29 @@ class TechnicalTextSummarizer:
                 time.sleep(self.retry_delay)
 
     def summarize_chunk(self, chunk, chunk_number):
+        # The Circuit Breaker: Prevent processing of meaningless chunks
+        if len(chunk.split()) < 20:
+            return f"Insufficient context for technical summarization.\n\nContent:\n{chunk}"
+
+        system_prompt = (
+            "You are a strict technical summarizer.\n\n"
+            "Rules:\n"
+            "1. ONLY summarize information explicitly present in the provided text.\n"
+            "2. Never invent facts or extrapolate data.\n"
+            "3. Never infer missing architecture.\n"
+            "4. If insufficient information exists, state that clearly.\n"
+            "5. If the chunk contains only a keyword or short phrase, explain that there is not enough context to produce a technical summary."
+        )
+
         prompt = (
-            f"This is chunk {chunk_number} from a very large technical dataset.\n\n"
-            f"Analyze this content deeply.\n"
-            f"Extract technical insights, analytical findings, relationships, explanations, "
-            f"important details, patterns, observations, and architecture knowledge.\n"
-            f"Create a dense structured technical summary preserving maximum information.\n\n"
+            f"This is chunk {chunk_number} from a dataset.\n\n"
+            f"Extract explicitly stated technical insights, analytical findings, relationships, and important details.\n"
+            f"Create a structured summary preserving factual information without adding outside knowledge.\n\n"
+            f"Text to analyze:\n"
             f"{chunk}"
         )
 
-        return self.call_model(prompt)
+        return self.call_model(prompt, system_prompt)
 
     def summarize_all_chunks(self, chunks):
         summaries = []
@@ -126,18 +132,23 @@ class TechnicalTextSummarizer:
         return "\n\n".join(summaries)
 
     def create_final_summary(self, combined_summary):
+        system_prompt = (
+            "You are a technical synthesis engine. Your sole purpose is to aggregate text intelligently without hallucinating."
+        )
+
         prompt = (
-            f"The following content contains multiple technical summaries derived from a very large dataset.\n\n"
-            f"Merge all information intelligently.\n"
-            f"Remove duplicate information.\n"
-            f"Preserve technical depth.\n"
-            f"Preserve analytical relationships.\n"
-            f"Maintain explanation quality.\n"
-            f"Generate one coherent technical summary of approximately {self.final_summary_words} words.\n\n"
+            f"Merge the following summaries into a single cohesive document.\n\n"
+            f"Rules for synthesis:\n"
+            f"- Do not introduce any new information.\n"
+            f"- Only include information explicitly stated in the summaries below.\n"
+            f"- If the combined summaries lack sufficient detail, state that additional context is required.\n"
+            f"- Do not fabricate explanations or assumptions.\n\n"
+            f"Maximum length: {self.max_summary_words} words.\n\n"
+            f"Summaries to merge:\n"
             f"{combined_summary}"
         )
 
-        return self.call_model(prompt)
+        return self.call_model(prompt, system_prompt)
 
     def summarize(self, raw_text):
         print("Validating input")
@@ -158,5 +169,3 @@ class TechnicalTextSummarizer:
         final_summary = self.create_final_summary(chunk_summaries)
 
         return final_summary
-
-

@@ -6,121 +6,506 @@
   <title>{{SYSTEM_NAME}} Intelligence | Command Center</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg-depth:       #020810;
+      --bg-panel:       #06101e;
+      --accent:         #22d3ee;
+      --accent-dim:     rgba(34, 211, 238, 0.14);
+      --accent-border:  rgba(34, 211, 238, 0.22);
+      --text-primary:   #e2eaf5;
+      --text-secondary: #7e94b0;
+      --text-muted:     #4a607c;
+      --border-subtle:  rgba(148, 163, 184, 0.10);
+      --border-panel:   rgba(148, 163, 184, 0.13);
+      --shadow-panel:   0 24px 64px rgba(1, 4, 12, 0.6);
+      --shadow-card:    0 8px 32px rgba(1, 4, 12, 0.5);
+      --radius-frame:   32px;
+      --radius-card:    20px;
+      --radius-chip:    999px;
+    }
+
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
     body {
-      font-family: 'Space Grotesk', sans-serif;
-      background: #030711;
-      background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(6, 182, 212, 0.12), transparent),
-                      radial-gradient(ellipse 40% 60% at 10% 80%, rgba(99, 102, 241, 0.08), transparent),
-                      radial-gradient(ellipse 30% 50% at 90% 30%, rgba(34, 211, 238, 0.06), transparent);
-      color: #e2e8f0;
+      font-family: 'Inter', 'Space Grotesk', system-ui, sans-serif;
+      background-color: var(--bg-depth);
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -8%,  rgba(34, 211, 238, 0.18) 0%, transparent 58%),
+        radial-gradient(ellipse 46% 60% at  8% 92%,  rgba(59, 130, 246, 0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 38% 46% at 95% 18%,  rgba(125, 211, 252, 0.09) 0%, transparent 55%),
+        radial-gradient(ellipse 60% 30% at 50% 100%, rgba(14, 165, 233, 0.06) 0%, transparent 70%);
+      background-attachment: fixed;
+      color: var(--text-primary);
       min-height: 100vh;
+      overflow-x: hidden;
+      padding: clamp(0.75rem, 1.5vw, 1.25rem);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
+
+    /* Subtle grid overlay — fades out after 70% of height */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background-image:
+        linear-gradient(var(--border-subtle) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+      background-size: 64px 64px;
+      mask-image: linear-gradient(180deg, rgba(0,0,0,0.5) 0%, transparent 72%);
+    }
+
+    /* Soft lens flare at top */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -30%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 70vw;
+      height: 60vh;
+      pointer-events: none;
+      z-index: 0;
+      background: radial-gradient(ellipse at center, rgba(34, 211, 238, 0.06) 0%, transparent 70%);
+    }
+
+    /* ─── App frame ─────────────────────────────────────────────────── */
+    .app-frame {
+      position: relative;
+      z-index: 1;
+      width: min(100%, 1520px);
+      margin: 0 auto;
+      border-radius: var(--radius-frame);
+      border: 1px solid var(--border-panel);
+      background:
+        linear-gradient(175deg, rgba(10, 18, 34, 0.88) 0%, rgba(5, 9, 20, 0.80) 100%),
+        linear-gradient(135deg, rgba(34, 211, 238, 0.05) 0%, transparent 40%);
+      box-shadow:
+        var(--shadow-panel),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      padding: clamp(0.85rem, 1.6vw, 1.35rem);
+      /* Removed overflow:hidden so content scrolls naturally */
+    }
+
+    /* Hairline top highlight */
+    .app-frame::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      border-radius: var(--radius-frame) var(--radius-frame) 0 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(34, 211, 238, 0.35) 30%, rgba(148, 163, 184, 0.18) 65%, transparent 100%);
+      pointer-events: none;
+    }
+
+    /* ─── Top bar ───────────────────────────────────────────────────── */
+    .dashboard-topbar {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      padding: 0.95rem 1.25rem;
+      border-radius: 22px;
+      border: 1px solid var(--border-panel);
+      background:
+        linear-gradient(180deg, rgba(12, 20, 38, 0.94) 0%, rgba(7, 12, 26, 0.86) 100%);
+      box-shadow:
+        0 4px 24px rgba(1, 4, 12, 0.45),
+        inset 0 1px 0 rgba(255, 255, 255, 0.055);
+    }
+
+    /* Brand logo container */
+    .brand-icon {
+      height: 46px;
+      width: 46px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(34, 211, 238, 0.22) 0%, rgba(59, 130, 246, 0.12) 100%);
+      border: 1px solid rgba(34, 211, 238, 0.30);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 20px rgba(34, 211, 238, 0.12), inset 0 1px 0 rgba(255,255,255,0.08);
+      flex-shrink: 0;
+    }
+
+    .dashboard-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      font-weight: 700;
+      letter-spacing: -0.035em;
+      line-height: 1;
+    }
+
+    .dashboard-eyebrow {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-top: 0.3rem;
+    }
+
+    /* Gradient text */
+    .gradient-cyan {
+      background: linear-gradient(125deg, #a5f3fc 0%, #22d3ee 40%, #67e8f9 80%);
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* ─── Status pill ───────────────────────────────────────────────── */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: #6ee7b7;
+      padding: 0.42rem 0.78rem;
+      border-radius: var(--radius-chip);
+      border: 1px solid rgba(16, 185, 129, 0.28);
+      background: rgba(6, 78, 59, 0.22);
+      white-space: nowrap;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+
+    .status-pill::before {
+      content: '';
+      width: 0.42rem;
+      height: 0.42rem;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.8);
+      animation: statusPulse 2.2s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes statusPulse {
+      0%, 100% { opacity: 0.75; transform: scale(0.85); }
+      50%       { opacity: 1;    transform: scale(1.15); }
+    }
+
+    /* ─── Clock card ────────────────────────────────────────────────── */
+    .clock-card {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.48rem 0.88rem;
+      border-radius: 12px;
+      background: rgba(8, 145, 178, 0.10);
+      border: 1px solid rgba(34, 211, 238, 0.22);
+      color: #a5f3fc;
+      font-size: 0.78rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+
+    .clock-card i {
+      opacity: 0.75;
+      font-size: 0.72rem;
+    }
+
+    /* ─── Dashboard shell ───────────────────────────────────────────── */
+    .dashboard-shell {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      margin-top: 0.85rem;
+      padding: clamp(1rem, 2vw, 1.5rem);
+      border: 1px solid var(--border-subtle);
+      border-radius: 28px;
+      background:
+        linear-gradient(180deg, rgba(7, 12, 24, 0.72) 0%, rgba(4, 7, 16, 0.58) 100%),
+        radial-gradient(ellipse 110% 60% at 50% -6%, rgba(34, 211, 238, 0.07) 0%, transparent 55%);
+      box-shadow:
+        0 32px 100px rgba(1, 4, 12, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(18px) saturate(155%);
+      -webkit-backdrop-filter: blur(18px) saturate(155%);
+    }
+
+    .dashboard-shell > * + * {
+      margin-top: 1.25rem;
+    }
+
+    /* ─── Glass card (premium) ──────────────────────────────────────── */
     .glass-premium {
-      background: linear-gradient(180deg, rgba(10, 16, 31, 0.82), rgba(6, 10, 21, 0.74));
-      backdrop-filter: blur(22px) saturate(185%);
-      border: 1px solid rgba(148, 163, 184, 0.08);
-      box-shadow: 0 30px 80px rgba(2, 6, 23, 0.42);
-      transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+      background:
+        linear-gradient(175deg, rgba(11, 18, 35, 0.85) 0%, rgba(7, 11, 24, 0.75) 100%);
+      backdrop-filter: blur(20px) saturate(175%);
+      -webkit-backdrop-filter: blur(20px) saturate(175%);
+      border: 1px solid var(--border-panel);
+      box-shadow: var(--shadow-card);
+      transition: border-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
     }
+
     .glass-premium:hover {
-      border-color: rgba(34, 211, 238, 0.24);
-      transform: translateY(-3px);
-      box-shadow: 0 36px 96px rgba(2, 6, 23, 0.52);
+      border-color: rgba(34, 211, 238, 0.20);
+      box-shadow: 0 16px 48px rgba(1, 4, 12, 0.65), 0 0 0 1px rgba(34, 211, 238, 0.06);
+      transform: translateY(-2px);
     }
-    .gradient-cyan { background: linear-gradient(135deg, #06b6d4, #22d3ee); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .number-glow { text-shadow: 0 0 20px rgba(6, 182, 212, 0.3); }
-    .dashboard-snippet {
-      display: -webkit-box;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 5;
-      overflow: hidden;
+
+    /* ─── KPI number glow ───────────────────────────────────────────── */
+    .number-glow {
+      text-shadow: 0 0 24px rgba(34, 211, 238, 0.28);
     }
+
+    /* ─── Section label ─────────────────────────────────────────────── */
+    .section-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.32em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    /* ─── Divider ───────────────────────────────────────────────────── */
+    .panel-divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-panel) 20%, var(--border-panel) 80%, transparent);
+    }
+
+    /* ─── Read-more pattern ─────────────────────────────────────────── */
     details > summary::-webkit-details-marker {
       display: none;
     }
+
+    .dashboard-snippet {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 4;
+      line-clamp: 4;
+      overflow: hidden;
+    }
+
     .readmore-chip {
       display: inline-flex;
       align-items: center;
-      gap: 0.35rem;
-      padding: 0.45rem 0.75rem;
-      border-radius: 999px;
-      border: 1px solid rgba(34, 211, 238, 0.22);
-      background: rgba(8, 145, 178, 0.14);
+      gap: 0.3rem;
+      padding: 0.38rem 0.7rem;
+      border-radius: var(--radius-chip);
+      border: 1px solid var(--accent-border);
+      background: var(--accent-dim);
       color: #67e8f9;
-      font-size: 0.68rem;
+      font-size: 0.62rem;
       font-weight: 700;
-      letter-spacing: 0.18em;
+      letter-spacing: 0.2em;
       text-transform: uppercase;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+      flex-shrink: 0;
+      transition: background 0.18s ease, border-color 0.18s ease;
     }
+
+    details:hover .readmore-chip,
+    details[open] .readmore-chip {
+      background: rgba(34, 211, 238, 0.20);
+      border-color: rgba(34, 211, 238, 0.35);
+    }
+
     .readmore-chip::after {
       content: '+';
-      font-size: 0.8rem;
+      font-size: 0.82rem;
       line-height: 1;
     }
+
     details[open] .readmore-chip::after {
       content: '−';
     }
+
     .readmore-full {
       display: none;
       opacity: 0;
-      transform: translateY(-2px);
-      transition: opacity 0.22s ease, transform 0.22s ease;
+      transform: translateY(-4px);
+      transition: opacity 0.24s ease, transform 0.24s ease;
     }
+
     details[open] .readmore-full {
       display: block;
       opacity: 1;
       transform: translateY(0);
     }
+
+    /* ─── Data table ────────────────────────────────────────────────── */
+    .dashboard-table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
     .dashboard-table thead th {
       position: sticky;
       top: 0;
       z-index: 1;
-      backdrop-filter: blur(10px);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      background: rgba(7, 12, 24, 0.92);
     }
-    .dashboard-table tbody tr:nth-child(even) {
-      background: rgba(15, 23, 42, 0.42);
+
+    .dashboard-table thead th,
+    .dashboard-table tbody td {
+      border-right: 1px solid rgba(30, 41, 59, 0.45);
     }
-    .dashboard-table td,
-    .dashboard-table th {
-      border-right: 1px solid rgba(30, 41, 59, 0.5);
-    }
-    .dashboard-table td:last-child,
-    .dashboard-table th:last-child {
+
+    .dashboard-table thead th:last-child,
+    .dashboard-table tbody td:last-child {
       border-right: none;
+    }
+
+    .dashboard-table tbody tr {
+      border-bottom: 1px solid rgba(30, 41, 59, 0.40);
+      transition: background 0.15s ease;
+    }
+
+    .dashboard-table tbody tr:hover {
+      background: rgba(34, 211, 238, 0.04);
+    }
+
+    .dashboard-table tbody tr:nth-child(even) {
+      background: rgba(14, 21, 42, 0.35);
+    }
+
+    /* ─── Scrollbar styling ─────────────────────────────────────────── */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: rgba(6, 10, 20, 0.6);
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(34, 211, 238, 0.22);
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(34, 211, 238, 0.38);
+    }
+
+    /* ─── Focus ring (a11y) ─────────────────────────────────────────── */
+    :focus-visible {
+      outline: 2px solid rgba(34, 211, 238, 0.55);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+
+    /* ─── Reduced motion ────────────────────────────────────────────── */
+    @media (prefers-reduced-motion: reduce) {
+      .status-pill::before { animation: none; }
+      .glass-premium       { transition: none; }
+    }
+
+    /* ─── Responsive tweaks ─────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      body {
+        padding: 0.5rem;
+      }
+
+      .app-frame {
+        border-radius: 22px;
+        padding: 0.65rem;
+      }
+
+      .dashboard-topbar {
+        padding: 0.75rem 0.9rem;
+        border-radius: 18px;
+        gap: 0.65rem;
+      }
+
+      .brand-icon {
+        height: 38px;
+        width: 38px;
+        border-radius: 11px;
+      }
+
+      .dashboard-shell {
+        padding: 0.85rem;
+        border-radius: 22px;
+      }
+
+      .clock-card {
+        font-size: 0.72rem;
+        padding: 0.4rem 0.7rem;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .status-pill span {
+        display: none;
+      }
+
+      .clock-card span {
+        font-size: 0.7rem;
+      }
     }
   </style>
 </head>
-<body class="p-4 md:p-6 lg:p-8 flex flex-col items-center min-h-screen">
-  <header class="w-full max-w-[1440px] flex flex-wrap items-center justify-between gap-4 mb-6">
-    <div class="flex items-center gap-3">
-      <div class="h-12 w-12 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/10 border border-cyan-400/30 flex items-center justify-center shadow-lg">
-        <i class="fas fa-recycle text-2xl text-cyan-300"></i>
-      </div>
-      <div>
-        <h1 class="text-3xl font-bold tracking-tight"><span class="gradient-cyan">{{SYSTEM_NAME}}</span></h1>
-        <p class="text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">Intelligence Command</p>
-      </div>
-    </div>
-    <div class="flex items-center gap-5 glass-premium px-5 py-3 rounded-2xl">
-        <span class="text-sm font-medium text-slate-200 tracking-wide">SYSTEM OPERATIONAL</span>
-        <div class="w-px h-5 bg-slate-700/60"></div>
-        <span class="text-sm text-slate-400 font-mono" id="live-time">--:--:-- UTC</span>
-    </div>
-  </header>
+<body>
+  <main class="app-frame">
 
-  <!-- This is where the AI will inject the la- l data -->
-  <div id="dashboard-content" class="w-full max-w-[1440px]">
-    {{DASHBOARD_BODY}}
-  </div>
+    <header class="dashboard-topbar">
+      <div class="flex items-center gap-3">
+        <div class="brand-icon">
+          <i class="fas fa-recycle text-xl" style="color: #a5f3fc;"></i>
+        </div>
+        <div>
+          <h1 class="dashboard-title"><span class="gradient-cyan">{{SYSTEM_NAME}}</span></h1>
+          <p class="dashboard-eyebrow">Intelligence Command Center</p>
+        </div>
+      </div>
+
+      <div class="flex items-center flex-wrap justify-end gap-2">
+        <span class="status-pill">
+          <span>System Operational</span>
+        </span>
+        <div class="clock-card">
+          <i class="fas fa-clock"></i>
+          <span id="live-time">--:--:-- UTC</span>
+        </div>
+      </div>
+    </header>
+
+    <div id="dashboard-content" class="dashboard-shell">
+      {{DASHBOARD_BODY}}
+    </div>
+
+  </main>
 
   <script>
     function updateClock() {
+      const el = document.getElementById('live-time');
+      if (!el) return;
       const now = new Date();
-      document.getElementById('live-time').textContent = now.toLocaleTimeString('en-US', { hour12: false, timeZone: 'UTC' }) + ' UTC';
+      el.textContent = now.toLocaleTimeString('en-US', {
+        hour12: false,
+        timeZone: 'UTC',
+        hour:   '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }) + ' UTC';
     }
     setInterval(updateClock, 1000);
     updateClock();
