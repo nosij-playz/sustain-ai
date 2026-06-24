@@ -106,10 +106,7 @@ class ChatMemoryStore:
         self._initialize()
 
     def _connect(self):
-        return sqlite3.connect(self.db_path)
-
-    def _initialize(self):
-        connection = self._connect()
+        connection = sqlite3.connect(self.db_path)
         try:
             connection.execute(
                 """
@@ -122,8 +119,13 @@ class ChatMemoryStore:
                 """
             )
             connection.commit()
-        finally:
-            connection.close()
+        except sqlite3.Error:
+            pass
+        return connection
+
+    def _initialize(self):
+        # Now handled within _connect to ensure table existence on every connection
+        pass
 
     def append_message(self, role: str, content):
         if content is None:
@@ -174,7 +176,7 @@ class ChatMemoryStore:
 class WasteDispoMaster:
     ENV_CACHE_TTL_SECONDS = 60 * 60  # 1 hour
 
-    def __init__(self, model_name="gemma4:31b-cloud", lite_model=None, default_location=None):
+    def __init__(self, model_name="gemma4:31b-cloud", lite_model=None, default_location="Chittarikkal, Kerala, India"):
         # Hard-lock to a single model across the entire system.
         locked_model = "gemma4:31b-cloud"
         self.model_name = locked_model
@@ -194,6 +196,9 @@ class WasteDispoMaster:
             "created_files": saved_data.get("created_files", []),
             "last_suggested_actions": saved_data.get("last_suggested_actions", []),
         }
+        
+        # Track the last cached location for invalidation
+        self._last_cached_location = None
 
         self.agents = {
             "env_agent": {"module": EnvAgentWrapper(), "description": "Real-time weather, soil, and env data.", "type": "DATA"},
@@ -307,7 +312,27 @@ class WasteDispoMaster:
         kb = self.context.setdefault("knowledge_base", {})
         return kb.setdefault("_cache", {})
 
+    def _invalidate_env_cache_if_location_changed(self, new_location: str):
+        """Invalidate environment cache if the location has changed."""
+        if not new_location:
+            return
+        
+        cache = self._get_cache()
+        env_cache = cache.get("env")
+        
+        if env_cache:
+            cached_place = (env_cache.get("place") or "").strip().lower()
+            new_place = (new_location or "").strip().lower()
+            
+            if cached_place and cached_place != new_place:
+                print(f"🗑️ Location changed from '{cached_place}' to '{new_place}'. Invalidating env cache.")
+                cache.pop("env", None)
+                self._last_cached_location = None
+
     def _get_cached_env(self, place: str):
+        # Invalidate cache if location changed
+        self._invalidate_env_cache_if_location_changed(place)
+        
         cache = self._get_cache()
         env_cache = cache.get("env")
         if not env_cache:
@@ -333,8 +358,12 @@ class WasteDispoMaster:
             "ttl_seconds": self.ENV_CACHE_TTL_SECONDS,
             "result": result,
         }
+        self._last_cached_location = place
 
     def _run_env_cached(self, place: str) -> Dict:
+        # Invalidate cache if location changed (defensive call)
+        self._invalidate_env_cache_if_location_changed(place)
+        
         cached = self._get_cached_env(place)
         if cached:
             return {"success": True, "cached": True, **cached}
@@ -433,7 +462,7 @@ class WasteDispoMaster:
     def _extract_image_path(self, text: str) -> Optional[str]:
         if not text:
             return None
-        m = re.search(r"([\w\-./\\: ]+\.(?:png|jpg|jpeg|webp))", text, flags=re.IGNORECASE)
+        m = re.search(r"([\w\-./\\ ]+\.(?:png|jpg|jpeg|webp))", text, flags=re.IGNORECASE)
         if not m:
             return None
         candidate = m.group(1).strip().strip('"').strip("'")
@@ -1177,7 +1206,15 @@ class WasteDispoMaster:
                 # Update Knowledge Base
                 self.context["knowledge_base"][intent] = res
                 if "place" in params:
-                    self.context["location"] = params["place"]
+                    old_location = self.context.get("location")
+                    new_location = params["place"]
+                    if old_location and old_location != new_location:
+                        # Invalidate cache when location is explicitly changed
+                        cache = self._get_cache()
+                        cache.pop("env", None)
+                        self._last_cached_location = None
+                        print(f"📍 Location updated from '{old_location}' to '{new_location}'. Cache invalidated.")
+                    self.context["location"] = new_location
 
         # Run dashboard last if requested
         if dashboard_requested and self.agents["dashboard_agent"]["module"]:
@@ -1204,6 +1241,27 @@ class WasteDispoMaster:
         return response
 
     def process_input(self, user_text):
+        # Check for explicit location change command
+        location_match = re.search(r"(?:change|set|update)\s+location\s+to\s+([^\n,\.]+)", user_text, re.IGNORECASE)
+        if location_match:
+            new_location = location_match.group(1).strip()
+            old_location = self.context.get("location")
+            if old_location and old_location.lower() != new_location.lower():
+                # Clear cache when location changes
+                cache = self._get_cache()
+                cache.pop("env", None)
+                self._last_cached_location = None
+                self.context["location"] = new_location
+                self.session.save(self.context)
+                print(f"📍 Location explicitly changed from '{old_location}' to '{new_location}'. Cache cleared.")
+                return f"✅ Location updated to '{new_location}'. Environmental data cache cleared for the new location."
+            elif not old_location:
+                self.context["location"] = new_location
+                self.session.save(self.context)
+                return f"✅ Location set to '{new_location}'."
+            else:
+                return f"📍 Location is already set to '{old_location}'."
+
         # Direct object classification path for user-uploaded/demo images.
         if self._wants_classification(user_text):
             image_path = self._extract_image_path(user_text)
@@ -1839,5 +1897,3 @@ class DashboardAgentWrapper:
             self.d.open_dashboard()
             return {"success": True, "file_path": self.d.output_file}
         return {"success": False}
-
-

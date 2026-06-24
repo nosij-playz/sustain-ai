@@ -7,6 +7,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -123,25 +125,6 @@
         .mode-btn:hover { border-color: var(--accent-border); color: var(--accent-text); background: var(--accent-bg); }
         .mode-btn-active { border-color: var(--accent-border) !important; background: var(--accent-bg) !important; color: var(--accent-text) !important; }
 
-        .location-card {
-            background: rgba(15,23,42,0.5);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            padding: 10px;
-        }
-        .location-form { display: flex; flex-direction: column; gap: 8px; }
-        .location-input {
-            width: 100%; padding: 9px 10px;
-            border-radius: var(--radius-sm);
-            border: 1px solid var(--border-strong);
-            background: rgba(15,23,42,0.5);
-            color: var(--text-primary);
-            font-size: 13px;
-            font-family: inherit;
-        }
-        .location-input:focus { outline: none; border-color: var(--accent-border); background: rgba(15,23,42,0.7); }
-        .location-help { font-size: 11px; color: var(--text-tertiary); margin-top: 7px; line-height: 1.5; }
-
         .btn-primary {
             width: 100%; padding: 10px;
             border-radius: var(--radius-sm);
@@ -244,7 +227,7 @@
         .panel-eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin-bottom: 2px; }
         .panel-title { font-size: 15px; font-weight: 600; }
         
-        .header-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+        .header-actions { display: flex; gap: 10px; align-items: center; }
 
         .clear-btn {
             padding: 6px 14px;
@@ -260,24 +243,19 @@
         }
         .clear-btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
 
-        .toast {
+        #dashboard-toast {
             position: fixed;
-            right: 20px;
             bottom: 20px;
-            z-index: 2000;
-            background: rgba(8,15,28,0.95);
-            border: 1px solid var(--accent-border);
-            color: var(--text-primary);
-            border-radius: var(--radius-md);
-            padding: 12px 14px;
-            box-shadow: var(--shadow-card);
-            max-width: 320px;
-            display: flex;
-            gap: 10px;
-            align-items: flex-start;
+            right: 20px;
+            z-index: 99999;
+            display: none;
+            flex-direction: column;
+            padding: 16px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);
         }
-        .toast strong { color: var(--accent-text); }
-        .toast-close { cursor: pointer; color: var(--text-secondary); font-size: 16px; line-height: 1; }
 
         /* Messages */
         .messages { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; flex: 1; }
@@ -357,6 +335,24 @@
         .send-btn:hover:not(:disabled) { background: #67e8f9; }
         .send-btn:disabled { opacity: 0.7; cursor: not-allowed; }
 
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .modal-content {
+            background: #0f172a; padding: 20px; border-radius: 12px;
+            width: 90%; max-width: 500px; border: 1px solid #334155;
+        }
+        .suggestions-list {
+            position: absolute; top: 100%; left: 0; right: 0; z-index: 1000;
+            background: #1e293b; border: 1px solid #334155; list-style: none;
+            padding: 0; margin: 0; max-height: 200px; overflow-y: auto;
+        }
+        .suggestions-list li { padding: 10px; cursor: pointer; color: white; }
+        .suggestions-list li:hover { background: #3b82f6; }
+        .leaflet-container { background: #1e293b; }
+
         .error-alert {
             margin: 0 20px 16px;
             border-radius: var(--radius-md);
@@ -416,35 +412,23 @@
             <div class="sidebar-section">
                 <p class="section-label">Mode</p>
                 <div class="mode-grid">
-                    <form class="mode-form" method="post" action="{{ url_for('set_mode') }}">
-                        <input type="hidden" name="mode" value="chat">
-                        <button type="submit" class="mode-btn {% if active_mode == 'chat' %}mode-btn-active{% endif %}">
-                            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                            Chat
-                        </button>
-                    </form>
-                    <form class="mode-form" method="post" action="{{ url_for('set_mode') }}">
-                        <input type="hidden" name="mode" value="speech">
-                        <button type="submit" class="mode-btn {% if active_mode == 'speech' %}mode-btn-active{% endif %}">
-                            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-                            Speech
-                        </button>
-                    </form>
+                    <button type="button" class="mode-btn {% if active_mode == 'chat' %}mode-btn-active{% endif %}" onclick="switchMode('chat')">
+                        <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                        Chat
+                    </button>
+                    <button type="button" class="mode-btn {% if active_mode == 'speech' %}mode-btn-active{% endif %}" onclick="switchMode('speech')">
+                        <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                        Speech
+                    </button>
                 </div>
             </div>
 
-            {% if active_mode != 'speech' %}
             <div class="sidebar-section">
-                <p class="section-label">Location</p>
-                <div class="location-card">
-                    <form class="location-form" method="post" action="{{ url_for('set_location') }}">
-                        <input type="text" class="location-input" name="location" value="{{ current_location }}" placeholder="Enter your location">
-                        <button type="submit" class="btn-primary" style="padding: 8px 10px; width: 100%;">Set location</button>
-                    </form>
-                    <p class="location-help">This location is used for local environmental details and dashboard context.</p>
-                </div>
+                <p class="section-label">Target Location</p>
+                <button onclick="toggleLocationModal(true)" class="btn-secondary" style="width: 100%;">
+                    {{ session.get('location') or 'Set Location' }}
+                </button>
             </div>
-            {% endif %}
 
             {% if active_mode == 'speech' %}
             <div class="sidebar-section">
@@ -484,17 +468,6 @@
                     </div>
                 </div>
             </div>
-
-            <div class="sidebar-section">
-                <p class="section-label">Location</p>
-                <div class="location-card">
-                    <form class="location-form" method="post" action="{{ url_for('set_location') }}">
-                        <input type="text" class="location-input" name="location" value="{{ current_location }}" placeholder="Enter your location">
-                        <button type="submit" class="btn-primary" style="padding: 8px 10px; width: 100%;">Set location</button>
-                    </form>
-                    <p class="location-help">This location is used for local environmental details and dashboard context.</p>
-                </div>
-            </div>
             {% endif %}
 
         </aside>
@@ -517,7 +490,7 @@
                         {% endif %}
                     </div>
 
-                    <form method="post" action="{{ url_for('clear_chat') }}" style="margin: 0;">
+                    <form method="post" action="{{ url_for('clear_chat') }}" style="margin: 0;" onsubmit="localStorage.removeItem('sustainai_chat_history');">
                         <button type="submit" class="clear-btn">
                             <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4h6v2"></path></svg>
                             Clear
@@ -603,14 +576,31 @@
 </div>
 
 <script>
-    const dashboardToastEl = document.getElementById('dashboard-toast');
-    window.showDashboardToastOnLoad = dashboardToastEl && dashboardToastEl.getAttribute('data-show-toast') === 'true';
     // Escape HTML to prevent injection when updating DOM
     function escapeHTML(str) {
         return str.replace(/[&<>'"]/g, tag => ({
             '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
         }[tag] || tag));
     }
+
+    function saveChatToBrowser() {
+        const chatContent = document.getElementById('chat-scroll').innerHTML;
+        localStorage.setItem('sustainai_chat_history', chatContent);
+    }
+
+    function loadChatFromBrowser() {
+        const saved = localStorage.getItem('sustainai_chat_history');
+        if (saved) {
+            const chatScroll = document.getElementById('chat-scroll');
+            if (chatScroll && chatScroll.children.length <= 1) {
+                chatScroll.innerHTML = saved;
+                chatScroll.scrollTop = chatScroll.scrollHeight;
+            }
+        }
+    }
+
+    const dashboardToastEl = document.getElementById('dashboard-toast');
+    window.showDashboardToastOnLoad = dashboardToastEl && dashboardToastEl.getAttribute('data-show-toast') === 'true';
 
     // Scroll messages to bottom on load
     const chatScroll = document.getElementById('chat-scroll');
@@ -630,28 +620,113 @@
     const chatTextarea = document.getElementById('chat-textarea');
     const sendBtn = document.getElementById('chat-send-btn');
     const systemName = "{{ system_name }}";
+    const IQ_KEY = "{{ locationiq_key }}"; 
+    console.log("DEBUG: API Key Loaded:", IQ_KEY ? "Yes" : "NO");
 
-    function triggerSubmission(e) {
+    let modalMap, modalMarker, selectedLocation = null;
+
+    function toggleLocationModal(show) {
+        const modal = document.getElementById('location-modal');
+        if (!modal) return;
+        modal.style.display = show ? 'flex' : 'none';
+        
+        if (show && !modalMap) {
+            modalMap = L.map('modal-map').setView([11.8745, 75.3704], 10);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(modalMap);
+            
+            modalMarker = L.marker([11.8745, 75.3704], {draggable: true}).addTo(modalMap);
+            
+            modalMarker.on('dragend', function(e) {
+                const {lat, lng} = e.target.getLatLng();
+                selectedLocation = { lat, lng, display_name: "Custom Location" };
+            });
+        }
+        if (show) setTimeout(() => { if(modalMap) modalMap.invalidateSize(); }, 100);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const searchInput = document.getElementById('modal-search');
+        if (searchInput) {
+            searchInput.addEventListener('input', async (e) => {
+                const query = e.target.value;
+                const list = document.getElementById('modal-suggestions');
+                
+                if (!IQ_KEY || query.length < 3) {
+                    list.innerHTML = '';
+                    return;
+                }
+
+                try {
+                    const res = await fetch(`https://api.locationiq.com/v1/autocomplete?key=${IQ_KEY}&q=${query}&limit=5`);
+                    const data = await res.json();
+                    
+                    list.innerHTML = '';
+                    if (Array.isArray(data)) {
+                        data.forEach(item => {
+                            const li = document.createElement('li');
+                            li.textContent = item.display_name;
+                            li.onclick = () => {
+                                selectedLocation = item;
+                                
+                                // 1. Ensure the modal is open and map is initialized
+                                toggleLocationModal(true); 
+                                
+                                // 2. Now that we've called the toggle function, modalMap is guaranteed to exist
+                                // Use a small delay to ensure the modal animation finishes
+                                setTimeout(() => {
+                                    modalMap.setView([item.lat, item.lon], 12);
+                                    modalMarker.setLatLng([item.lat, item.lon]);
+                                }, 200);
+                                
+                                // 3. Clear suggestions
+                                document.getElementById('modal-suggestions').innerHTML = '';
+                                document.getElementById('modal-search').value = item.display_name;
+                            };
+                            list.appendChild(li);
+                        });
+                    } else {
+                        console.warn("API returned non-array data (possibly error):", data);
+                    }
+                } catch (err) {
+                    console.error("Search error:", err);
+                }
+            });
+        }
+    });
+
+    async function saveLocation() {
+        if (!selectedLocation) return alert("Please select a location first");
+        
+        try {
+            const response = await fetch("/update-location", {
+                method: "POST",
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ location_name: selectedLocation.display_name })
+            });
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert("Failed to save location.");
+            }
+        } catch (err) {
+            console.error("Save error:", err);
+            alert("Network error while saving location.");
+        }
+    }
+    async function triggerSubmission(e) {
+        if (e) e.preventDefault(); 
+        
         const text = chatTextarea.value.trim();
         const hasImage = chatImageInput && chatImageInput.files.length > 0;
 
-        // Don't submit if empty
-        if (text === '' && !hasImage) {
-            if(e) e.preventDefault();
-            return;
-        }
+        if (text === '' && !hasImage) return;
+        if (sendBtn.disabled) return;
 
-        // Prevent double submission
-        if (sendBtn.disabled) {
-            if(e) e.preventDefault();
-            return;
-        }
-
-        // 1. Remove empty state if present
         const emptyState = document.getElementById('chat-empty-state');
         if (emptyState) emptyState.remove();
 
-        // 2. Append User Message Instantly
         let contentText = text;
         if (hasImage) {
             contentText += '\n[Image Attached: ' + chatImageInput.files[0].name + ']';
@@ -667,13 +742,14 @@
             <p class="msg-text">${escapeHTML(contentText)}</p>
         `;
         chatScroll.appendChild(userMsg);
+        saveChatToBrowser();
 
-        // 3. Append Assistant "Thinking..." Indicator to the chat window
         const thinkingId = 'thinking-span-' + Date.now();
         const svgIcon = `<svg class="icon-sm" style="animation: spin 1s linear infinite;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>`;
         
         const thinkingMsg = document.createElement('div');
         thinkingMsg.className = 'msg msg-assistant';
+        thinkingMsg.id = 'thinking-indicator';
         thinkingMsg.innerHTML = `
             <div class="msg-meta">
                 <span class="msg-role">${escapeHTML(systemName)}</span>
@@ -686,35 +762,80 @@
         `;
         chatScroll.appendChild(thinkingMsg);
         
-        // Setup the cycling text interval
         const textSpan = document.getElementById(thinkingId);
         if (textSpan) {
-            const states = [
-                "Processing your request...", 
-                "SustainAi is thinking...", 
-                "Analyzing your request..."
-            ];
+            const states = ["Processing your request...", "SustainAi is thinking...", "Analyzing your request..."];
             let stateIndex = 0;
-            setInterval(() => {
+            const interval = setInterval(() => {
+                if (!document.getElementById(thinkingId)) {
+                    clearInterval(interval);
+                    return;
+                }
                 stateIndex = (stateIndex + 1) % states.length;
                 textSpan.textContent = states[stateIndex];
-            }, 2500); // Changes every 2.5 seconds
+            }, 2500);
         }
         
-        // Force scroll to bottom
         chatScroll.scrollTop = chatScroll.scrollHeight;
-
-        // 4. Update UI to Disabled State (keep box in place, just grey it out)
         chatTextarea.readOnly = true;
         chatTextarea.style.opacity = '0.5';
-        
-        // Turn the send button into a spinner
         sendBtn.innerHTML = svgIcon;
         sendBtn.disabled = true;
 
-        // 5. Let the form naturally submit if triggered by button, or force submit if triggered by Enter key
-        if(e && e.type === 'keydown') {
-            chatForm.submit();
+        try {
+            const formData = new FormData(chatForm);
+            const response = await fetch("/chat", {
+                method: "POST",
+                body: formData
+            });
+
+            if (response.status === 400) {
+                const thinkingEl = document.getElementById('thinking-indicator');
+                if (thinkingEl) thinkingEl.remove();
+                
+                chatTextarea.readOnly = false;
+                chatTextarea.style.opacity = '1';
+                sendBtn.innerHTML = '<span>Send</span><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
+                sendBtn.disabled = false;
+                
+                toggleLocationModal(true);
+                return;
+            }
+
+            const data = await response.json();
+
+            if (data.success) {
+                const thinkingEl = document.getElementById('thinking-indicator');
+                if (thinkingEl) thinkingEl.remove();
+
+                const aiMsg = document.createElement('div');
+                aiMsg.className = 'msg msg-assistant';
+                aiMsg.innerHTML = `
+                    <div class="msg-meta">
+                        <span class="msg-role">${escapeHTML(systemName)}</span>
+                        <span class="msg-time">Just now · chat</span>
+                    </div>
+                    <p class="msg-text">${escapeHTML(data.response)}</p>
+                `;
+                chatScroll.appendChild(aiMsg);
+                chatScroll.scrollTop = chatScroll.scrollHeight;
+                saveChatToBrowser();
+            } else {
+                const thinkingEl = document.getElementById('thinking-indicator');
+                if (thinkingEl) thinkingEl.remove();
+                alert("Error: " + (data.error || "Unknown error"));
+            }
+        } catch (err) {
+            console.error("Chat error:", err);
+            const thinkingEl = document.getElementById('thinking-indicator');
+            if (thinkingEl) thinkingEl.remove();
+            alert("A network error occurred. Please try again.");
+        } finally {
+            chatTextarea.value = '';
+            chatTextarea.readOnly = false;
+            chatTextarea.style.opacity = '1';
+            sendBtn.innerHTML = '<span>Send</span><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
+            sendBtn.disabled = false;
         }
     }
 
@@ -782,6 +903,31 @@
     let audioChunks = [];
     let stream;
     let currentAudio = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Check if location is None (or empty string/null)
+        const currentLocation = "{{ session.get('location') }}";
+        
+        // If the location is missing, trigger the popup
+        if (!currentLocation || currentLocation === "None" || currentLocation === "null") {
+            console.log("No location set. Opening location modal...");
+            toggleLocationModal(true);
+        }
+
+        loadChatFromBrowser();
+    });
+
+    async function switchMode(mode) {
+        const formData = new FormData();
+        formData.append('mode', mode);
+        
+        try {
+            await fetch("/set-mode", { method: "POST", body: formData });
+            window.location.reload(); 
+        } catch (err) {
+            console.error("Mode switch failed", err);
+        }
+    }
 
     function toggleAudioPlayback() {
         if (!currentAudio) return;
@@ -867,8 +1013,69 @@
         }
     }
 
+    let lastKnownDashboardTimestamp = null;
+
+    function showDashboardToast(title = 'Dashboard ready', body = 'A new dashboard has been generated and is ready to view.') {
+        const toast = document.getElementById('dashboard-toast');
+        if (!toast) return;
+
+        const titleEl = toast.querySelector('strong');
+        const bodyEl = toast.querySelector('div > div');
+        if (titleEl) titleEl.textContent = title;
+        if (bodyEl) bodyEl.textContent = body;
+
+        toast.style.display = 'flex';
+        clearTimeout(window.dashboardToastTimer);
+        window.dashboardToastTimer = setTimeout(() => {
+            toast.style.display = 'none';
+        }, 4000);
+    }
+
+    function ensureDashboardButton(url) {
+        const container = document.getElementById('dashboard-action-container');
+        if (!container || container.querySelector('a')) return; 
+
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.className = 'btn-primary btn-dashboard';
+        link.style.cssText = 'padding: 6px 14px; width: auto; font-size: 12px; margin: 0; text-decoration: none; display: inline-flex;';
+        link.innerHTML = `
+            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+            View Dashboard
+        `;
+        container.appendChild(link);
+    }
+
+    setInterval(async () => {
+        try {
+            const response = await fetch("/check-dashboard");
+            const data = await response.json();
+
+            if (data.ready) {
+                if (!document.querySelector('.btn-dashboard')) {
+                    ensureDashboardButton("/dashboard");
+                }
+
+                const currentTimestamp = data.last_modified || 0;
+                if (lastKnownDashboardTimestamp === null) {
+                    lastKnownDashboardTimestamp = currentTimestamp;
+                    showDashboardToast('Dashboard ready', 'A new dashboard has been generated and is ready to view.');
+                } else if (currentTimestamp > lastKnownDashboardTimestamp) {
+                    lastKnownDashboardTimestamp = currentTimestamp;
+                    showDashboardToast('Dashboard updated', 'An updated version of the dashboard is available.');
+                }
+            }
+        } catch (err) {
+            console.error("Failed to check dashboard status:", err);
+        }
+    }, 3000);
+
+
     async function startRecording() {
         try {
+            const startTime = Date.now(); // Track when recording started
+            const MIN_DURATION = 5000; // 5 seconds minimum
             stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             
             // --- VAD Setup ---
@@ -912,14 +1119,19 @@
                 for (let i = 0; i < dataArray.length; i++) volume += dataArray[i];
                 volume /= dataArray.length;
 
-                if (volume < SILENCE_THRESHOLD) {
-                    if (!silenceStart) silenceStart = Date.now();
-                    if (Date.now() - silenceStart > SILENCE_DELAY) {
-                        mediaRecorder.stop();
-                        return;
+                const timePassed = Date.now() - startTime;
+
+                // Only check for silence if we have passed the minimum duration
+                if (timePassed > MIN_DURATION) {
+                    if (volume < SILENCE_THRESHOLD) {
+                        if (!silenceStart) silenceStart = Date.now();
+                        if (Date.now() - silenceStart > SILENCE_DELAY) {
+                            mediaRecorder.stop();
+                            return;
+                        }
+                    } else {
+                        silenceStart = null;
                     }
-                } else {
-                    silenceStart = null;
                 }
                 requestAnimationFrame(checkVolume);
             }
@@ -936,16 +1148,6 @@
             mediaRecorder.stop();
             setUIState('processing');
         }
-    }
-
-    function showDashboardToast() {
-        const toast = document.getElementById('dashboard-toast');
-        if (!toast) return;
-        toast.style.display = 'flex';
-        clearTimeout(window.dashboardToastTimer);
-        window.dashboardToastTimer = setTimeout(() => {
-            toast.style.display = 'none';
-        }, 4000);
     }
 
     function hideDashboardToast() {
@@ -974,6 +1176,16 @@
             View Dashboard
         `;
         container.appendChild(link);
+    }
+
+    function showDashboardToast() {
+        const toast = document.getElementById('dashboard-toast');
+        if (!toast) return;
+        toast.style.display = 'flex';
+        clearTimeout(window.dashboardToastTimer);
+        window.dashboardToastTimer = setTimeout(() => {
+            toast.style.display = 'none';
+        }, 4000);
     }
 
     async function uploadAudio() {
@@ -1010,24 +1222,17 @@
                 
                 chatScroll.scrollTop = chatScroll.scrollHeight;
 
-                if (data.dashboard_ready && data.dashboard_url) {
-                    ensureDashboardButton(data.dashboard_url);
-                    showDashboardToast();
-                }
-
                 // 5. Play the generated TTS audio
-                if (data.audio_url) {
-                    currentAudio = new Audio(data.audio_url);
-                    
-                    const audioCtrl = document.getElementById('speech-audio-ctrl');
-                    if (audioCtrl) audioCtrl.style.display = 'block';
+                currentAudio = new Audio(data.audio_url);
+                
+                const audioCtrl = document.getElementById('speech-audio-ctrl');
+                if (audioCtrl) audioCtrl.style.display = 'block';
 
-                    currentAudio.play();
+                currentAudio.play();
 
-                    currentAudio.onended = () => {
-                        if (audioCtrl) audioCtrl.style.display = 'none';
-                    };
-                }
+                currentAudio.onended = () => {
+                    if (audioCtrl) audioCtrl.style.display = 'none';
+                };
             } else {
                 alert("Error: la" + data.error);
             }
@@ -1039,5 +1244,24 @@
         }
     }
 </script>
+
+<div id="location-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+        <h3 style="margin-bottom: 15px; color: white;">Select Location</h3>
+        
+        <div style="position: relative; margin-bottom: 15px;">
+            <input type="text" id="modal-search" placeholder="Type to search (e.g. Kannur)..." class="textarea-input" style="width: 100%;">
+            <ul id="modal-suggestions" class="suggestions-list"></ul>
+        </div>
+
+        <div id="modal-map" style="height: 300px; width: 100%; border-radius: 8px; margin-bottom: 15px; background: #1e293b;"></div>
+        
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <button onclick="toggleLocationModal(false)" class="btn-secondary">Cancel</button>
+            <button onclick="saveLocation()" class="btn-primary">Save Location</button>
+        </div>
+    </div>
+</div>
+
 </body>
 </html>
