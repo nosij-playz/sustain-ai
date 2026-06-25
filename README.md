@@ -182,7 +182,7 @@ SustainAi is built on a sophisticated **master-agent architecture** where the `W
 1. **Clone the Repository**
    ```bash
    git clone https://github.com/nosij-playz/sustain-ai.git
-   cd Waste_Man
+   cd Sustain-ai
    ```
 
 2. **Create a Virtual Environment (Recommended)**
