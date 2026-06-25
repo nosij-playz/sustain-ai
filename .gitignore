@@ -26,6 +26,6 @@ Storage/chat_memory.sqlite
 Storage/chat_memory.sqlite-wal
 Storage/chat_memory.sqlite-shm
 interface/dashboard.html
-display/*.png
+
 
 response.mp3
